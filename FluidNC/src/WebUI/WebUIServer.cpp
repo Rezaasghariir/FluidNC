@@ -519,12 +519,17 @@ namespace WebUI {
             return true;
         }
 
-        bool        isGzip = false;
-        FileStream* file   = NULL;
+        std::string response_path(path);
+        bool        isGzip = response_path.length() > 3 && response_path.rfind(".gz") == response_path.length() - 3;
+        if (isGzip) {
+            response_path.resize(response_path.length() - 3);
+        }
+
+        FileStream* file = NULL;
         try {
             file = new FileStream(path, "r", LocalFS);
         } catch (const Error err) {
-            if (acceptGz) {
+            if (acceptGz && !isGzip) {
                 try {
                     std::string gzpath(fpath);
                     //                    std::filesystem::path gzpath(fpath);
@@ -539,8 +544,10 @@ namespace WebUI {
             return false;
         }
 
+        const char* content_type = getContentType(response_path);
+
         AsyncWebServerResponse* response = request->beginResponse(
-            getContentType(path), file->size(), [file, request](uint8_t* buffer, size_t maxLen, size_t total) mutable -> size_t {
+            content_type, file->size(), [file, request](uint8_t* buffer, size_t maxLen, size_t total) mutable -> size_t {
                 if (!file) {
                     request->client()->close();
                     return 0;  //RESPONSE_TRY_AGAIN; // This only works for ChunkedResponse
@@ -564,7 +571,9 @@ namespace WebUI {
             get_random_string(session, sizeof(session) - 1);
             response->addHeader("Set-Cookie", ("sessionId=" + std::string(session)).c_str());
         }
-        if (download) {
+        if (download && strncmp(content_type, "text/html", strlen("text/html")) != 0 &&
+            strncmp(content_type, "text/css", strlen("text/css")) != 0 &&
+            strncmp(content_type, "application/javascript", strlen("application/javascript")) != 0) {
             response->addHeader("Content-Disposition", "attachment");
         }
         if (hash.length()) {
